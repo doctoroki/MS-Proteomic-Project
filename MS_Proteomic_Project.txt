@@ -1,0 +1,1155 @@
+rm(list=ls())
+#- Reception - Recruitment - UK Biobank Assessment Centre -#
+library(data.table)
+Recruit_date <- fread("/public/home/wubs/Huashan1/wbs_data/wbs_wes/data/diseases/1204_updated/FieldID_53.txt")
+colnames(Recruit_date) <- c("eid","X53.0.0")
+Recruit_date <- na.omit(Recruit_date)
+Recruit_date$X53.0.0 <- as.Date(Recruit_date$X53.0.0)
+names(Recruit_date)[2]<- "Re_date"
+## Death & Control date
+Death_date <- fread("/public/home/wubs/Huashan1/wbs_data/wbs_wes/data/diseases/1204_updated/Death_date.txt")
+cov <- fread("/public/home/wubs/Huashan1/wbs_data/wbs_wes/data/diseases/1204_updated/Covariates.txt")
+UKB675773 <- fread("/public/home3/UKB_bulks/dataset_4075724/ukb675773.csv")
+a <- colnames(UKB675773)
+a <- paste0('X',a)
+a <- chartr('-','.', a)
+colnames(UKB675773) <- a
+colnames(UKB675773)[1] <- 'eid'
+col_UKB675773 <- as.data.frame(colnames(UKB675773))
+colnames(col_UKB675773) <- 'FieldID'
+datacode <- read.csv("~/WL_data/AI_NDD_ICD10code1.csv",sep=',')
+datacode$Date.Field.ID <- as.character(datacode$Date.Field.ID)
+datacode$Source.Field.ID <- as.character(datacode$Source.Field.ID)
+phenofile <- fread("/public/home/wubs/Huashan1/wbs_data/wbs_wes/data/diseases/1204_updated/outcome-info-new_v1203.txt")
+nrow(datacode)
+for (i in 1:3){
+  ICD10 <- datacode[i,3]
+  ICD10_source <- datacode[i,4]
+  a <- as.data.frame(strsplit(ICD10,", "))
+  b <- as.data.frame(strsplit(ICD10_source,", "))
+  #- include all ICDs in a disease -#
+  merge <- NULL
+  for (n in 1:nrow(a)){
+    c <- a[n,1]
+    d <- b[n,1]
+    phenotype <- phenofile$Field[match(c,phenofile$FieldID)]
+    print(phenotype)
+    fieldID_date <- paste0('X',c,'.0.0')
+    fieldID_source <- paste0('X',d,'.0.0')
+    idx_date <- which(col_UKB675773$FieldID == fieldID_date)
+    idx_source <- which(col_UKB675773$FieldID == fieldID_source)
+    piece <- UKB675773[,c(1,idx_date,idx_source),with = F]
+    piece <- na.omit(piece)
+    colnames(piece) <- c('eid','end_date','source')
+    piece$end_date <- as.Date(piece$end_date)
+    merge <- rbind(merge,piece)
+  }
+  #- test whether duplicated eids existed -#
+  table(duplicated(merge$eid))
+  #- Delete duplicates after sorting by date of diagnosis -#
+  merge <- merge[order(merge$eid,merge$end_date,decreasing = FALSE),]
+  merge <- merge[!duplicated(merge$eid),]
+  merge <- transform(merge,status = 1)
+  table(merge$source)
+  print(nrow(merge))
+  ##-- Control date --##
+  Control_date <- Death_date
+  Control_date$status <- 0
+  merge_eid <- unique(merge$eid)
+  Control_date <- subset(Control_date,eid %in% setdiff(Control_date$eid,merge_eid))
+  
+  ##-- generate disease_days --#
+  #- Disease + Control = Disease_survial_data -#
+  merge$end_date <- as.Date(merge$end_date)
+  Control_date$end_date <- as.Date(Control_date$end_date)
+  Disease_survival_data <- rbind(merge,Control_date)
+  table(duplicated(Disease_survival_data$eid))
+  #- Disease survival data + recruitment -#
+  Disease_survival_data <- merge(Recruit_date,Disease_survival_data,by="eid",all = TRUE)
+  Disease_survival_data$end_date<- as.Date(Disease_survival_data$end_date)
+  Disease_survival_data$Re_date <- as.Date(Disease_survival_data$Re_date)
+  Disease_survival_data <- transform(Disease_survival_data,disease_days = end_date - Re_date)
+  Disease_survival_data <- transform(Disease_survival_data,disease_months = disease_days/30,disease_years = disease_days/365)
+  table(duplicated(Disease_survival_data$eid))
+  Disease_survival_data <- subset(Disease_survival_data,!is.na(disease_days))
+  Disease_survival_data <- subset(Disease_survival_data,end_date != "1900-01-01" & end_date != "1901-01-01" & end_date != "1902-02-02" & end_date != "1903-03-03" & end_date != "2037-07-07" )
+  Longname <- datacode[i,1]
+  Shortname <- datacode[i,5]
+  Disease_survival_data[,c(6:8)] <- lapply(Disease_survival_data[,c(6:8)],as.numeric)
+  #Disease_survival_data <- subset(Disease_survival_data,source != "50")
+  write.table(Disease_survival_data,paste0("~/WL_data/",Shortname,"_survival_data.csv"),col.names = T,row.names = F,quote = F,sep = "\t")
+}
+
+UKB673929 <- fread("/public/home3/UKB_bulks/dataset_673929/ukb673929.csv")
+UKB675773 <- UKB673929
+a <- colnames(UKB675773)
+a <- paste0('X',a)
+a <- chartr('-','.', a)
+colnames(UKB675773) <- a
+colnames(UKB675773)[1] <- 'eid'
+col_UKB675773 <- as.data.frame(colnames(UKB675773))
+colnames(col_UKB675773) <- 'FieldID'
+for (i in 5:10){
+  ICD10 <- datacode[i,3]
+  ICD10_source <- datacode[i,4]
+  a <- as.data.frame(strsplit(ICD10,", "))
+  b <- as.data.frame(strsplit(ICD10_source,", "))
+  #- include all ICDs in a disease -#
+  merge <- NULL
+  for (n in 1:nrow(a)){
+    c <- a[n,1]
+    d <- b[n,1]
+    phenotype <- phenofile$Field[match(c,phenofile$FieldID)]
+    print(phenotype)
+    fieldID_date <- paste0('X',c,'.0.0')
+    fieldID_source <- paste0('X',d,'.0.0')
+    idx_date <- which(col_UKB675773$FieldID == fieldID_date)
+    idx_source <- which(col_UKB675773$FieldID == fieldID_source)
+    piece <- UKB675773[,c(1,idx_date,idx_source),with = F]
+    piece <- na.omit(piece)
+    colnames(piece) <- c('eid','end_date','source')
+    piece$end_date <- as.Date(piece$end_date)
+    merge <- rbind(merge,piece)
+  }
+  #- test whether duplicated eids existed -#
+  table(duplicated(merge$eid))
+  #- Delete duplicates after sorting by date of diagnosis -#
+  merge <- merge[order(merge$eid,merge$end_date,decreasing = FALSE),]
+  merge <- merge[!duplicated(merge$eid),]
+  merge <- transform(merge,status = 1)
+  table(merge$source)
+  print(nrow(merge))
+  ##-- Control date --##
+  Control_date <- Death_date
+  Control_date$status <- 0
+  merge_eid <- unique(merge$eid)
+  Control_date <- subset(Control_date,eid %in% setdiff(Control_date$eid,merge_eid))
+  
+  ##-- generate disease_days --#
+  #- Disease + Control = Disease_survial_data -#
+  merge$end_date <- as.Date(merge$end_date)
+  Control_date$end_date <- as.Date(Control_date$end_date)
+  Disease_survival_data <- rbind(merge,Control_date)
+  table(duplicated(Disease_survival_data$eid))
+  #- Disease survival data + recruitment -#
+  Disease_survival_data <- merge(Recruit_date,Disease_survival_data,by="eid",all = TRUE)
+  Disease_survival_data$end_date<- as.Date(Disease_survival_data$end_date)
+  Disease_survival_data$Re_date <- as.Date(Disease_survival_data$Re_date)
+  Disease_survival_data <- transform(Disease_survival_data,disease_days = end_date - Re_date)
+  Disease_survival_data <- transform(Disease_survival_data,disease_months = disease_days/30,disease_years = disease_days/365)
+  table(duplicated(Disease_survival_data$eid))
+  Disease_survival_data <- subset(Disease_survival_data,!is.na(disease_days))
+  Disease_survival_data <- subset(Disease_survival_data,end_date != "1900-01-01" & end_date != "1901-01-01" & end_date != "1902-02-02" & end_date != "1903-03-03" & end_date != "2037-07-07" )
+  Longname <- datacode[i,1]
+  Shortname <- datacode[i,5]
+  Disease_survival_data[,c(6:8)] <- lapply(Disease_survival_data[,c(6:8)],as.numeric)
+  #Disease_survival_data <- subset(Disease_survival_data,source != "50")
+  write.table(Disease_survival_data,paste0("~/WL_data/",Shortname,"_survival_data.csv"),col.names = T,row.names = F,quote = F,sep = "\t")
+}
+
+
+##Logistic回归
+library(dplyr)
+library(ggplot2)
+
+# 读取数据
+phenotype <- read.csv("MS_prevalent_final_0407.csv")
+proteomics <- read.csv("ProteinData_new.csv")
+proteomics_covariates <- read.csv("ProteinSuppInfo_imputed.csv")
+
+# 合并数据
+data_all <- phenotype %>%
+  left_join(proteomics, by = "eid") %>%
+  left_join(proteomics_covariates, by = "eid")
+
+# 转换因子变量
+data_all$Sex <- as.factor(data_all$Sex)
+data_all$batch <- as.factor(data_all$batch)
+data_all$season <- as.factor(data_all$season)
+data_all$ethnic <- as.factor(data_all$ethnic)
+
+# 初始化一个空的数据框保存结果
+results <- data.frame()
+
+# 获取蛋白质名称列表（去掉eid列）
+protein_names <- names(proteomics)[-1]
+
+# 对每一个蛋白进行Logistic回归
+for (protein in protein_names) {
+  formula <- as.formula(paste0("status ~ ", 
+                               protein, " + Age + Sex + fastingtime + batch + season + smoking + TDI + BMI + ethnic + alcohol + ",
+                               protein, "_SampAge"))
+  
+  fit <- glm(formula, data = data_all, family = binomial(link = "logit"))
+  summary_fit <- summary(fit)
+  
+  # 提取OR和p值
+  OR <- exp(summary_fit$coefficients[protein, "Estimate"])
+  ci_lower <- exp(summary_fit$coefficients[protein, "Estimate"] - 1.96 * summary_fit$coefficients[protein, "Std. Error"])
+  ci_upper <- exp(summary_fit$coefficients[protein, "Estimate"] + 1.96 * summary_fit$coefficients[protein, "Std. Error"])
+  p_value <- summary_fit$coefficients[protein, "Pr(>|z|)"]
+  
+  # 将结果添加到数据框中
+  results <- rbind(results, data.frame(protein = protein, OR = OR, 
+                                       lower_95_CI = ci_lower, upper_95_CI = ci_upper,
+                                       Pvalue = p_value))
+}
+
+# Bonferroni校正
+alpha <- 0.05 / nrow(results)
+results$significant <- results$Pvalue < alpha
+
+# 结果输出为CSV
+write.csv(results, "logistic_results_0407.csv", row.names = FALSE)
+
+
+##Cox回归
+library(survival)
+library(dplyr)
+library(ggplot2)
+
+phenotype <- read.csv("MS_follow_final_0407.csv")
+proteomics <- read.csv("ProteinData_new.csv")
+proteomics_covariates <- read.csv("ProteinSuppInfo_imputed.csv")
+
+data_all <- phenotype %>%
+  left_join(proteomics, by = "eid") %>%
+  left_join(proteomics_covariates, by = "eid")
+
+data_all$Sex <- as.factor(data_all$Sex)
+data_all$batch <- as.factor(data_all$batch)
+data_all$season <- as.factor(data_all$season)
+data_all$ethnic <- as.factor(data_all$ethnic)
+
+# 初始化一个空的数据框保存结果
+results <- data.frame()
+
+# 获取蛋白质名称列表（去掉eid列）
+protein_names <- names(proteomics)[-1]
+
+# 对每一个蛋白进行cox回归
+for (protein in protein_names) {
+  formula <- as.formula(paste0("Surv(disease_days, status) ~ ", 
+                               protein, " + Age + Sex + fastingtime + batch + season + smoking + TDI + BMI + ethnic + alcohol + ",
+                               protein, "_SampAge"))
+  
+  fit <- coxph(formula, data = data_all)
+  summary_fit <- summary(fit)
+  
+  # 提取HR和p值
+  HR <- summary_fit$coefficients[protein, "coef"]
+  ci_lower <- summary_fit$conf.int[protein, "lower .95"]
+  ci_upper <- summary_fit$conf.int[protein, "upper .95"]
+  p_value <- summary_fit$coefficients[protein, "Pr(>|z|)"]
+  
+  # 将结果添加到数据框中
+  results <- rbind(results, data.frame(protein = protein, HR = exp(HR), 
+                                       lower_95_CI = ci_lower, upper_95_CI = ci_upper,
+                                       Pvalue = p_value))
+}
+
+# Bonferroni校正
+alpha <- 0.05 / nrow(results)
+results$significant <- results$Pvalue < alpha
+
+# 结果输出为CSV
+write.csv(results, "cox_results_0407.csv", row.names = FALSE)
+
+
+##GSEA_GO富集分析
+library(clusterProfiler)
+library(org.Hs.eg.db)
+gene_list <- read.csv("gene_list.csv", header = T, row.names = 1)
+gene_entrezid <- bitr(geneID = rownames(gene_list), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+gene_entrezid$logFC <- gene_list$coef[match(gene_entrezid$SYMBOL, rownames(gene_list))]
+genelist = gene_entrezid$logFC
+names(genelist) = gene_entrezid$ENTREZID
+genelist = sort(genelist, decreasing = T)
+GO_ges<- gseGO(geneList= genelist,
+               OrgDb= org.Hs.eg.db,
+               ont= "BP", #one of "BP", "MF", and "CC"subontologies, or "ALL"for all three.
+               minGSSize= 10,
+               maxGSSize= 500,
+               pvalueCutoff= 0.05,                       ##设置pvalueCutoff= 1查看所有结果
+               pAdjustMethod = "BH",
+               verbose= FALSE,
+               eps= 0)
+##GSEA_KEGG富集分析
+KEGG_ges<- gseKEGG(geneList= genelist,
+               organism= "hsa",
+               minGSSize= 10,
+               maxGSSize= 500,
+               pvalueCutoff= 0.05,
+               pAdjustMethod= "BH",
+               verbose= FALSE,
+               eps= 0)
+##GSEA_Reactome富集分析
+library(ReactomePA)
+ret_ges<- gsePathway(genelist,
+               organism= "human",
+               minGSSize= 10,
+               maxGSSize= 500,
+               pvalueCutoff= 0.05,
+               pAdjustMethod= "BH",
+               verbose= FALSE,
+               eps= 0)
+##GSEA_DO(Disease Ontology)富集分析
+library(DOSE)
+DO_ges<- gseDO(genelist,
+               minGSSize= 10,
+               maxGSSize= 500,
+               pvalueCutoff= 0.05,
+               pAdjustMethod= "BH",
+               verbose= FALSE,
+               eps= 0)
+##GSEA_MSigDB富集分析
+library(msigdbr)
+m_t2g <- msigdbr(species = "Homo sapiens", category = "H") %>%
+  dplyr::select(gs_name, entrez_gene)        ##老版本命令
+m_t2g<-msigdbr(species = "Homo sapiens", db_species = "HS", collection = "H") %>%
+   dplyr::select(gs_name, ncbi_gene)           ##新版本msigdbr包已舍弃category
+head(m_t2g)
+gsea_res <- GSEA(genelist, 
+                 TERM2GENE = m_t2g,
+                 minGSSize = 10,
+                 maxGSSize = 500,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 verbose= FALSE,
+                 eps= 0)
+##第一个条目的所有基因
+gsea_res[[gsea_res$ID[[1]]]]
+##峰峦图（X轴是核心基因的表达倍数变化，正值表示上调，负值表示下调）
+library(enrichplot)
+library(ggplot2)
+ridgeplot(gsea_res,
+          showCategory = 20,
+          fill = "pvalue", #填充色 "pvalue", "p.adjust", "qvalue" 
+          core_enrichment = TRUE,#是否只使用 core_enriched gene
+          label_format = 30,
+          orderBy = "NES",
+          decreasing = FALSE
+) +
+  theme(axis.text.y = element_text(size=8))
+##gseadist（展示基因集的logFC分布）
+ids <- gsea_res@result$ID[1:5]
+gseadist(gsea_res,
+         IDs = ids,
+         type = "density" # boxplot
+) +
+  theme(legend.direction = "vertical")
+##gsearank（展示基因的排序以及富集分数的变化）
+gsearank(gsea_res,
+         geneSetID = 1 # 要展示的基因集
+)
+##gseaplot2默认subplots = 1:3，把3个图放一起
+gseaplot2(gsea_res,geneSetID = 1,title = "title",
+          subplots = 1:3,
+          base_size = 10)
+gseaplot2(gsea_res, geneSetID = 1, subplots = 1)
+gseaplot2(gsea_res, geneSetID = 1, subplots = 1:2)
+##把entrezid变为symbol
+gsea_res_symbol <- setReadable(gsea_res, "org.Hs.eg.db", "ENTREZID")
+p <- gseaplot2(gsea_res_symbol,geneSetID = 1,
+               title = gsea_res_symbol$Description[1])
+p[[1]] <- p[[1]]+
+  theme(title = element_text(color = "red"))
+p
+##展示多条通路
+tmp <- as.data.frame(gsea_res_symbol)
+colnames(tmp)
+head(tmp,3)
+p <- gseaplot2(gsea_res, geneSetID = 1:6)
+p
+p[[1]] <- p[[1]] + scale_color_viridis_d(labels = c("aaa","bbb","ccc","ddd","eee","fff"))+
+  geom_hline(yintercept = 0,color = "grey75", linewidth = 0.8, linetype = 2)+
+  theme(legend.position = "top", legend.direction = "horizontal")
+p[[2]] <- p[[2]] + scale_color_viridis_d()
+p[[3]] <- p[[3]] + geom_hline(yintercept = 0, color = "steelblue", linewidth = 0.5, linetype = 2)
+p
+
+rm(list = ls())
+library(clusterProfiler)
+library(org.Hs.eg.db)
+gene_list <- read.csv("gene_list.csv", header = T, row.names = 1)
+gene_entrezid <- bitr(geneID = rownames(gene_list), fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+gene_entrezid$logFC <- gene_list$or[match(gene_entrezid$SYMBOL, rownames(gene_list))]
+genelist = gene_entrezid$logFC
+names(genelist) = gene_entrezid$ENTREZID
+genelist = sort(genelist, decreasing = T)
+library(msigdbr)
+m_t2g<-msigdbr(species = "Homo sapiens", db_species = "HS", collection = "C7") %>%
+  dplyr::select(gs_name, ncbi_gene)
+head(m_t2g)
+gsea_res <- GSEA(genelist, 
+                 TERM2GENE = m_t2g,
+                 minGSSize = 10,
+                 maxGSSize = 500,
+                 pvalueCutoff = 1,
+                 pAdjustMethod = "BH",
+                 verbose= FALSE,
+                 eps= 0)
+
+##柱状图
+library(ggplot2)
+df <- read.csv("protein1.csv")
+ggplot(df,aes(x=type,y=nums,fill=experiment))+geom_bar(stat = 'identity', position = 'dodge',width = 0.6,color='black')+geom_text(aes(label=nums),size=4,position = position_dodge(width = 0.6),vjust=-0.3)+labs(x=NULL)+ theme_bw(base_size = 18)+theme(axis.text = element_text(colour = 'black'))+ theme(axis.text.x = element_text(angle=45))+ geom_hline(yintercept = 1.301029996, colour = "black", lwd = 0.5, linetype = "dashed")
+
+##火山图
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+mydata <- read.csv("gene.csv")
+volc_plot <- ggplot(mydata, aes(b, pval2)) +
+  geom_point(size = 0.4) + # 调整点的大小
+  xlab(expression("ln"*"(OR)")) + # 修饰横坐标的题目
+  ylab(expression("-log"[10]*"P-value")) + # 修饰纵坐标的题目
+  theme_minimal()
+volc_plot
+mydata1 <- mydata %>%
+  mutate(expression = case_when(b >1 & pval1 < 0.05 ~ "Up-regulated", # 上调
+                                b <1 & pval1 < 0.05 ~ "Down-regulated", # 下调
+                                TRUE ~ "Unchanged")) # 不变
+volc_plot1 <- ggplot(mydata1, aes(b, pval2)) +
+  geom_point(size = 1.4, aes(color = expression)) + # 根据expression水平进行着色
+  xlab(expression("ln"*"(OR)")) + # 修饰x轴题目
+  ylab(expression("-log"[10]*"P-value")) + # 修饰y轴题目
+  scale_color_manual(values = c("steelblue", "grey", "red")) + # 添加三种颜色
+  theme_minimal()
+volc_plot1
+top_48 <-bind_rows(
+  mydata1 %>%
+    filter(expression == 'Up-regulated') %>%
+    arrange(pval1, desc(abs(b))) %>%
+    head(4),
+  mydata1 %>%
+    filter(expression == 'Down-regulated') %>%
+    arrange(pval1, desc(abs(b))) %>%
+    head(44)
+)
+volc_plot2 <- volc_plot1 +
+  geom_label_repel(data = top_48,
+                   aes(b, pval2, label = gene),
+                   size = 2)
+volc_plot2
+volc_plot2 + geom_hline(yintercept = 4.766412847, colour = "black", lwd = 0.5, linetype = "dashed") ##添加p值参考线
+options(ggrepel.max.overlaps = Inf)   ##通过设置最大重叠纳入全部差异基因
+
+##小提琴图
+library(ggpubr)
+data <- read.csv("follow_protein.csv")
+p <- ggviolin(data, x = "status", # 分组列
+y = "ADGRE5", # 基因列
+fill = "status", #按分组填充颜色
+alpha = 1,#透明图 0-1
+width = 0.5, #宽度
+legend = "top",legend.title = "Survival Status",#legend及位置
+font.legend = c(12, "bold", "black"),
+ylab="ADGRE5 NPX value", xlab=FALSE, #xy轴标签，去掉X轴标签
+font.y = 16,#xy轴标题大小
+x.text.angle = 0, y.text.angle = 0,#xy轴标题角度
+font.tickslab = c(15,"plain","black"), #xy轴刻度大小/样式/颜色
+add = "boxplot", #添加图 "dotplot", "jitter", "boxplot", "point"
+add.params = list(fill = "white", #填充颜色 白色
+width = 0.1,#宽度
+linetype = 1)#线型
+)
+p
+
+##蛋白轨迹图
+library(MatchIt)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+protein_data <- read.csv("protein_data2.csv")
+filtered_data <- protein_data %>%
+     filter(!(status == "0" & disease_years <= 2))
+m.out1 <- matchit(status~ Age+Sex,
+                   method = "nearest", 
+                   distance = "mahalanobis" , 
+                   ratio = 10, 
+                   link = "logit" , 
+                   exact = ~Sex,  
+                   data = filtered_data)
+plot(summary(m.out1)) 
+m.data <- match.data(m.out1)                        ##已导出m.data.csv可直接读取
+m.data=m.data[order(m.data$subclass),]
+time_scale=m.data$disease_years[which(m.data$status==1)]
+m.data$time_scale=rep(time_scale,each=11)
+m.data$time_scale=m.data$time_scale*sign(-1) 
+m.data$Sex <- as.factor(m.data$Sex)
+m.data$batch <- as.factor(m.data$batch)
+m.data$season <- as.factor(m.data$season)
+m.data$ethnic <- as.factor(m.data$ethnic)
+df_final=as.data.frame(m.data$eid)
+colnames(df_final)[1]="eid"
+for (i in 2:21) {
+     selected_columns <- c(1, i, 25:61)
+     df <- m.data[, selected_columns]
+     df=na.omit(df)
+     FML=as.formula(paste0(colnames(m.data)[i],"~Age+Sex+fastingtime+batch+season+smoking+TDI+BMI+ethnic+alcohol+", i, "_SampAge"))
+     fit=lm(FML,data = df) 
+     res <- fit$residuals 
+     df=cbind(df,res) 
+     colnames(df)[40]=paste0(colnames(m.data)[i],"_res")
+     df_final=left_join(df_final,df[,c(1,40)],by="eid")
+}
+plot(fitted(fit), res)
+abline(0,0)
+df_final=left_join(df_final,m.data[,c(1,25:61)],by="eid")
+df_final$subclass=as.factor(df_final$subclass)
+df_group=df_final %>% group_by(subclass)
+variable.names=colnames(df_group)[2:21]
+t=df_group %>% summarise(
+     (get(variable.names[1])[which(status==1)]-mean(get(variable.names[1])[which(status==0)],na.rm=T))/sd(get(variable.names[1])[which(status==0)],na.rm=T)
+) 
+colnames(t)[2]=str_sub(variable.names[1],1,-5)
+for (i in 1:20) {
+     t2=df_group %>% summarise(
+         (get(variable.names[i])[which(status==1)]-mean(get(variable.names[i])[which(status==0)],na.rm=T))/sd(get(variable.names[i])[which(status==0)],na.rm=T)
+)
+     colnames(t2)[2]=str_sub(variable.names[i],1,-5)
+     t=cbind(t,t2[,2])
+}
+time=df_group %>% summarise(
+     unique(time_scale)
+)
+t=cbind(t,time[,2])
+colnames(t)[23]="Year"
+t <- t [,-3]                          ##去除NEFL.1列 
+df_t=pivot_longer(t[,c(2:21,22)],cols =1:20,names_to = "Protein",values_to = "Estimate")
+variable.names= colnames(t)[2:21]
+print(variable.names)
+df_loess=data.frame("Year"=NA,"Protein"=NA,"Estimate_loess"=NA)
+for (i in variable.names) {
+   df2=filter(df_t,Protein==i)
+   df2=na.omit(df2)
+   df3=data.frame(Year=seq(-15.2,-0.2,0.2),Protein=rep(i,length(seq(-15.2,-0.2,0.2))))
+   loess90 <- loess(Estimate ~ Year, data=df2, span=300) 
+   smooth90 <- predict(loess90,df3) 
+   df3$Estimate_loess=smooth90 
+   df_loess=rbind(df_loess,df3)
+}
+df_loess=df_loess[-1,]
+df_heat=df_loess
+max(df_heat$Estimate_loess,na.rm = T)
+min(df_heat$Estimate_loess,na.rm = T)
+df_heat$Estimate_loess[which(abs(df_heat$Estimate_loess)<0.3)]=NA
+df_heat=pivot_wider(df_heat,names_from = Year,values_from = Estimate_loess)
+for (i in ncol(df_heat):2) {
+   df_heat=df_heat[order(abs(df_heat[[i]]),decreasing = T),]
+}
+heat=df_heat[1:20,2:(ncol(df_heat))]
+rownames(heat)=df_heat$Protein[1:20]
+heat <- as.matrix(heat)
+colnames(heat)[75] <- "-0.4"
+colnames(heat)[74] <- "-0.6"
+colnames(heat)[73] <- "-0.8"
+colnames(heat)[72] <- "-1.0"
+library(ComplexHeatmap)
+library(circlize)
+cellwidth = 0.1
+cellheight = 0.6
+cn = dim(heat)[2]
+rn = dim(heat)[1]
+w=cellwidth*cn
+h=cellheight*rn
+col_fun1 = colorRamp2(c(-1.5, 0, 1.0), c("#1867AC", "white","#C0151B"))
+Heatmap(
+   heat,  
+   name = "r",  
+   col = col_fun1,  
+   width = unit(w, "cm"),  
+   height = unit(h, "cm"), 
+   rect_gp = gpar(col = "black", lwd = 0.05),  
+   border_gp = gpar(col = "black", lty = 1, lwd = 1.2),  
+   na_col = "white",  
+   cluster_rows = F,  
+   cluster_columns = F,  
+   row_title = NULL, 
+   column_title = NULL,  
+   column_names_gp = gpar(fontsize = 11), 
+   row_names_gp = gpar(fontsize = 11),  
+   heatmap_legend_param = list(  
+     legend_height = unit(3, "cm"),
+     grid_width = unit(0.4, "cm"),
+     labels_gp = gpar(col = "gray20", fontsize = 8),
+     title = "Zscore",
+     direction = "horizontal"
+))
+ggplot(df_loess, aes(x=Year, y=Estimate_loess, color=Protein)) +
+     geom_line() +
+     labs(title="Multiple Plasma Protein Trajectories", x="Year", y="Estimate_loess")
+
+##Cluster
+##变成wide data, matrix
+df_loess_w=pivot_wider(df_loess,names_from = Year,values_from = Estimate_loess)
+df_loess_w <- as.data.frame(df_loess_w)
+rownames(df_loess_w) <- df_loess_w$Protein
+df_loess_w=df_loess_w[-1]
+df_loess_w=as.matrix(df_loess_w)
+##聚类
+dist_protein <- dist(df_loess_w, method="euclidean")  #Cosine  minkowski euclidean Manhattan 
+fit_protein <- hclust(dist_protein, method="complete") 
+heatmap(as.matrix(dist_protein))
+plot(fit_protein, cex=0.5)
+rect.hclust(fit_protein, k=3, border="red") 
+##确定最佳类别数供参考，不一定按照这个类别数
+library(factoextra)
+library(cluster)
+df_loess_w<-df_loess_w[,-1]
+any(is.infinite(df_loess_w)) 
+any(is.na(df_loess_w)) 
+##通过complete.cases() 函数筛选不包含遗漏值的行
+df_loess_w_clean <- df_loess_w[complete.cases(df_loess_w), ]
+df_loess_w <- df_loess_w_clean
+#clusGap()函数计算 Gap 统计量，该统计量通常用于确定给定数据的最佳聚类数
+gap_stat <- clusGap(df_loess_w, FUN = hcut, nstart = 25, K.max = 15, B = 50)           ##K.max = 3
+fviz_gap_stat(gap_stat)
+###比较不同聚类方法的效果，供参考，不一定按照这个方法
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+ac <- function(x) {
+  agnes(df_loess_w, method = x)$ac
+}
+sapply(m, ac)
+##把它属于的类别标注上去
+library(dplyr)
+##将数据切分为3类别
+clustered_data_protein <- cutree(fit_protein, k=3) # k:最终决定分几类
+clustered_data_protein_tidy <- as.data.frame(as.table(clustered_data_protein)) %>% glimpse()
+colnames(clustered_data_protein_tidy) <- c("Protein","cluster")
+clustered_data_protein_tidy$Protein <- as.character(clustered_data_protein_tidy$Protein)
+joined_clusters_protein <- df_loess %>%
+  inner_join(clustered_data_protein_tidy, by = "Protein") %>%
+  glimpse()
+joined_clusters_protein$Protein=as.factor(joined_clusters_protein$Protein)
+table(clustered_data_protein_tidy$cluster)
+##visualize loop
+library(patchwork)
+color=c("#0072B5","#E18727","#BC3C29","#20854E","#7876B1")
+color2=c("#8FB4E1","#F3D1AB","#E79B91","#89D181","#C3C2DC")
+pname=paste0("P",c(1:5))
+q=1
+for (i in 1:4) {
+  cluster <- joined_clusters_protein %>% filter(cluster == i) 
+  p=ggplot() +
+    geom_smooth(data=cluster,aes(x=Year,y=Estimate_loess,group=Protein),size=0.1,colour=color2[i],se=F)+
+    #geom_smooth(data = df2,aes(x=Year,y=Estimate),method="loess",color='red', se=F, size=0.5)+
+    theme_test() +
+    ylab("Z score") + xlab("Years before diagnosis") +
+    #scale_y_continuous(limits = c(-4,4))+
+    scale_x_continuous(breaks = seq(-15,0,2.5))+
+    geom_hline(yintercept = 0,lty=2,col="black",lwd=0.2)+
+    geom_smooth(data=cluster,aes(x=Year,y=Estimate_loess),method = "loess",color=color[i], se=F, size=1.5)+
+    ggtitle(paste0("Cluster ",i))+
+    theme_test() +
+    theme(
+      axis.text = element_text(
+        color="black",
+        size=9),
+      axis.title = element_text(
+        face="bold", 
+        color="black",
+        size=10,
+        lineheight = 2),
+      axis.ticks = element_line(size = 0.3),
+      legend.position = 'none',
+      plot.title = element_text(hjust = 0.5,face="bold")
+    )
+  assign(pname[q],p)
+  q=q+1
+}
+P=as.data.frame(pname)
+P_all=wrap_plots(mget(P$pname[1:3]), ncol = 1)
+P_all
+pdf("V3_cluster_110722.pdf",width = 16/3,height = 7.5)
+print(P_all)
+dev.off()                                   ##关闭PDF设备（这将保存文件）
+
+##蛋白Cluster
+library(STRINGdb)
+plasma_proteins <- c('ITGAV', 'ITGAM', 'NEFL', 'ITGB2', 'MXRA8', 'ITGA11', 'CST1', 'CA14', 'COMP', 'PEPD', 'HPGDS', 'ENPP5', 'CLEC4A', 'TF', 'ACHE', 'CA6', 'CHRDL2', 'CST5', 'RGMA', 'BAG3', 'SFRP4', 'GFAP', 'MYOC', 'ITGA2', 'RET', 'CRTAC1', 'OMG', 'MERTK', 'ACP5', 'ART3', 'FAP', 'MEPE', 'MSTN', 'CLEC4M', 'CDA', 'TNXB', 'FNDC1', 'GPC1', 'DUSP13', 'IGDCC4', 'PPY', 'CHAD', 'ITGB5', 'FGFBP2', 'GZMA', 'COL15A1', 'RGMB', 'CPA2')
+plasma_proteins <- c('NEFL', 'GZMA', 'SPOCK1', 'ERBB2', 'DCTPP1', 'MAN1A2', 'FGL1', 'ITGAV', 'POMC', 'SETMAR', 'COMP', 'CD34', 'IL1RAP', 'FASLG', 'LYPD3', 'BGN', 'KLRD1', 'B4GAT1', 'ADA', 'ADGRE5')
+string_db <- STRINGdb$new(version="12.0", species=9606, score_threshold=500, input_directory="")
+getOption('timeout')
+options(timeout=100000)
+getOption('timeout')
+mapped_proteins <- string_db$map(data.frame(protein=plasma_proteins), "protein", removeUnmappedRows=FALSE)
+interactions <- string_db$get_interactions(mapped_proteins$STRING_id)
+string_db$plot_network(mapped_proteins$STRING_id)
+hits <- unique(mapped_proteins$STRING_id)
+clustersList <- string_db$get_clusters(string_ids = hits ,
+                                        algorithm  = "fastgreedy")
+mapped_proteins$cluster <- NA
+for(i in seq_along(clustersList)){
+    mapped_proteins$cluster[mapped_proteins$STRING_id %in% clustersList[[i]]] <- i
+}
+string_db$plot_network(mapped_proteins$STRING_id, required_score=500, add_summary=TRUE, payload_id=mapped_proteins$STRING_id)
+for(i in seq_along(clustersList)){
+     print(paste("Functional enrichment for cluster", i))
+     enrichment <- string_db$get_enrichment(clustersList[[i]])
+     print(head(enrichment))
+}
+Pro_clust=data.frame(matrix(NA, nrow = 8, ncol = 26))
+for (i in 1:26) {
+          temp=clustersList[[i]]
+          temp=unique(mapped_proteins$protein[which(mapped_proteins$STRING_id%in%temp)])
+          length(temp)=8
+          Pro_clust[i]=temp}
+write.csv(Pro_clust,"Pro_clust.csv")
+
+##String图
+library(ggraph)
+library(ggplot2)
+library(tidygraph)
+library(ggforce)
+library(dplyr)
+nodes <- data.frame(
+  name = c("ITGAM", "NEFL", "CLEC4A", "GFAP", "OMG", "MERTK", "ITGAV", "ITGA11", "COMP", "ITGA2", "ACP5", "TNXB", "CHAD", "ITGB5", "ITGB2", "FGFBP2", "GZMA", "ACHE", "PPY", "CPA2", "SFRP4", "MEPE", "FNDC1", "GPC1", "COL15A1", "RGMA", "RGMB", "CST1", "CA6"),
+  cluster = c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5 ,5, 5, 6, 6, 7, 7, 8, 8)  # 手动分配簇：A/B/C=簇1, D/E=簇2, F=簇3
+)
+edges <- data.frame(
+  from = c("ACHE", "ACP5", "CA6", "CHAD", "CHAD", "CHAD", "CHAD", "CHAD", "CLEC4A", "COL15A1", "COMP", "COMP", "COMP", "COMP", "COMP", "CPA2", "CST1", "FGFBP2", "FNDC1", "GFAP", "GFAP", "GFAP", "GPC1", "GZMA", "GZMA", "ITGA11", "ITGA11", "ITGA11", "ITGA11", "ITGA11", "ITGA11", "ITGA11", "ITGA11", "ITGA2", "ITGA2", "ITGA2", "ITGA2", "ITGA2", "ITGA2", "ITGA2", "ITGA2", "ITGAM", "ITGAM", "ITGAM", "ITGAM", "ITGAM", "ITGAM", "ITGAM", "ITGAM", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGAV", "ITGB2", "ITGB2", "ITGB2", "ITGB2", "ITGB2", "ITGB2", "ITGB5", "ITGB5", "ITGB5", "ITGB5", "ITGB5", "ITGB5", "ITGB5", "ITGB5", "MEPE", "MERTK", "NEFL", "OMG", "PPY", "PPY", "RGMA", "RGMB", "SFRP4", "SFRP4", "TNXB", "TNXB", "TNXB", "TNXB"),
+  to = c("PPY", "ITGAV", "CST1", "COMP", "ITGA11", "ITGA2", "ITGAV", "ITGB5", "ITGAM", "GPC1", "CHAD", "ITGA11", "ITGA2", "ITGAV", "ITGB5", "PPY", "CA6", "GZMA", "SFRP4", "ITGAM", "NEFL", "OMG", "COL15A1", "FGFBP2", "ITGB2", "CHAD", "COMP", "ITGA2", "ITGAM", "ITGAV", "ITGB2", "ITGB5", "TNXB", "CHAD", "COMP", "ITGA11", "ITGAM", "ITGAV", "ITGB2", "ITGB5", "TNXB", "CLEC4A", "GFAP", "ITGA11", "ITGA2", "ITGAV", "ITGB2", "ITGB5", "MERTK", "ACP5", "CHAD", "COMP", "ITGA11", "ITGA2", "ITGAM", "ITGB2", "ITGB5", "TNXB", "GZMA", "ITGA11", "ITGA2", "ITGAM", "ITGAV", "ITGB5", "CHAD", "COMP", "ITGA11", "ITGA2", "ITGAM", "ITGAV", "ITGB2", "TNXB", "SFRP4", "ITGAM", "GFAP", "GFAP", "ACHE", "CPA2", "RGMB", "RGMA", "FNDC1", "MEPE", "ITGA11", "ITGA2", "ITGAV", "ITGB5"),
+  score = c(0.509, 0.571, 0.516, 0.652, 0.720, 0.919, 0.759, 0.664, 0.530, 0.760, 0.652, 0.769, 0.720, 0.911, 0.681, 0.660, 0.516, 0.617, 0.595, 0.715, 0.726, 0.523, 0.760, 0.617, 0.626, 0.720, 0.769, 0.947, 0.560, 0.923, 0.940, 0.973, 0.689, 0.919, 0.720, 0.947, 0.635, 0.967, 0.974, 0.980, 0.703, 0.530, 0.715, 0.560, 0.635, 0.638, 0.999, 0.704, 0.612, 0.571, 0.759, 0.911, 0.923, 0.967, 0.638, 0.990, 0.999, 0.910, 0.626, 0.940, 0.974, 0.999, 0.990, 0.943, 0.664, 0.681, 0.973, 0.980, 0.704, 0.999, 0.943, 0.665, 0.770, 0.612, 0.726, 0.523, 0.509, 0.660, 0.909, 0.909, 0.595, 0.770, 0.689, 0.703, 0.910, 0.665)
+)
+nodes <- data.frame(
+  name = c("GZMA", "ERBB2", "CD34", "FASLG", "KLRD1", "ITGAV", "COMP", "BGN"),
+  cluster = c(1, 1, 1, 1, 1, 2, 2, 2)  # 手动分配簇：A/B/C=簇1, D/E=簇2, F=簇3
+)
+edges <- data.frame(
+  from = c("BGN", "BGN", "CD34", "CD34", "CD34", "CD34", "COMP", "COMP", "ERBB2", "ERBB2", "FASLG", "FASLG", "FASLG", "FASLG", "GZMA", "GZMA", "ITGAV", "ITGAV", "ITGAV", "KLRD1", "KLRD1", "KLRD1"),
+  to = c("COMP", "ITGAV", "ERBB2", "FASLG", "ITGAV", "KLRD1", "BGN", "ITGAV", "CD34", "FASLG", "CD34", "ERBB2", "GZMA", "KLRD1", "FASLG", "KLRD1", "BGN", "CD34", "COMP", "CD34", "FASLG", "GZMA"),
+  score = c(0.724, 0.514, 0.504, 0.637, 0.528, 0.511, 0.724, 0.911, 0.504, 0.659, 0.637, 0.659, 0.889, 0.855, 0.889, 0.906, 0.514, 0.528, 0.911, 0.511, 0.855, 0.906)
+)
+graph <- tbl_graph(nodes = nodes, edges = edges, directed = FALSE) %>%
+  activate(nodes) %>%
+  mutate(degree = centrality_degree(),
+  ) 
+ggraph(graph, layout = "fr") +  # 力导向布局
+  geom_edge_link(
+    aes(width = score),          # 边宽度映射到分数
+    color = "grey50",
+    alpha = 0.6
+  ) +
+  geom_node_point(
+    aes(size = degree),          # 节点大小映射到degree
+    color = "skyblue",
+    alpha = 0.8
+  ) +
+  geom_node_text(
+    aes(label = name),           # 添加标签
+    size = 3,
+    repel = TRUE                 # 避免标签重叠
+  ) +
+  geom_mark_ellipse(
+    aes(x, y, color = cluster, group = cluster),  
+    fill = NA,                # 无填充色
+    linetype = "dashed",      # 虚线
+    expand = unit(3, "mm"),   # 圈的大小扩展
+    alpha = 0.5
+  ) +  
+  scale_edge_width_continuous(range = c(1, 2)) +  # 边粗细范围
+  scale_size_continuous(range = c(12, 20)) +         # 节点大小范围
+  theme_void() +
+  labs(title = "Protein Interaction Network (ggraph)")
+
+##语义相似度
+library(GOSemSim)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ReactomePA)
+library(dplyr)
+result = data.frame("ID"=NA,"Description"=NA,"GeneRatio"=NA,"BgRatio"=NA,"RichFactor"=NA, "FoldEnrichment"=NA, "zScore"=NA,"pvalue" =NA,"p.adjust"=NA,"qvalue"=NA,"geneID"=NA,"Count"=NA,"Redundant_with_term"=NA)
+genelist <- c("CST1", "CA6")
+genelist_entrez <- bitr(genelist, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+go_enrich <- enrichGO(gene = genelist_entrez$ENTREZID,
+                      OrgDb = org.Hs.eg.db,
+                      keyType = "ENTREZID",
+                      ont = "BP",  # BP: Biological Process, MF: Molecular Function, CC: Cellular Component, or "ALL" for all three. 
+                      pvalueCutoff = 0.05,
+                      pAdjustMethod = "BH",
+                      qvalueCutoff = 0.2,
+                      minGSSize = 10,
+                      maxGSSize = 500)
+GO_data = data.frame(go_enrich)
+GO_data = GO_data[order(GO_data$Count,decreasing = T),]
+go_enrich2 <- simplify(go_enrich, cutoff=0.7, by="p.adjust", select_fun=min)
+GO_data2 = data.frame(go_enrich2)
+GO_data2 = GO_data2[order(GO_data2$Count,decreasing = T),]
+hsGO <- godata('org.Hs.eg.db', ont="BP") 
+SemSim=mgoSim(GO_data2$ID, GO_data2$ID, semData=hsGO, measure="Wang", combine=NULL)
+GO_data2$Redundant_with_term=NA
+for (j in 1:nrow(GO_data2)) {
+  v = SemSim[j,][order(SemSim[j,],decreasing = T)]
+  name = rownames(as.data.frame(which(v>=0.25&v!=1))) # 相似度评分0.25我都显示了，也可以调整
+  name = GO_data2$Description[grep(paste0(name,collapse = "|"),GO_data2$ID)]
+  GO_data2$Redundant_with_term[j]=paste0(name,collapse = "|")
+}
+GO_data2$GeneRatio = gsub("/","_", GO_data2$GeneRatio)
+GO_data2$BgRatio = gsub("/","_", GO_data2$BgRatio)
+result = rbind(result,GO_data2)
+result <- result[-1,]
+View(result)
+
+##条形图
+library(ggplot2)
+data <- read.csv("df.csv", header = T)
+barplot <- ggplot(data, aes(x = interaction(Minor, Major), y = p_value, 
+                 fill = Major, alpha = p_value < 0.05)) +
+  geom_col(width = 0.7, position = position_dodge()) +     # 并列条形图
+  geom_text(aes(label = sprintf("%.3f", p_value)),         # 添加p值标签
+            hjust = -0.1, size = 3, color = "black") +
+  geom_hline(yintercept = 0.05, linetype = "dashed", 
+             color = "red", linewidth = 0.5) +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +                    # 颜色方案
+  scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.5)) + # 透明度区分显著性
+  labs(x = "Minor Category (Grouped by Major)", y = "p-value",
+       title = "Dodged Horizontal Bar Plot") +
+  theme(
+    panel.grid.major = element_line(colour=NA),
+    panel.grid.minor = element_line(colour=NA),
+    panel.background = element_rect(fill = "white"),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 10),
+    axis.line = element_line(colour="black",linewidth = 0.6)
+  )
+barplot
+pdf("barplot_110722.pdf",width = 16/3,height = 7.5)
+print(barplot)
+dev.off() 
+
+##相关性热图
+library(ggplot2)
+longformData <- read.csv("image1.csv", header = T)
+barplot <- ggplot(longformData, aes(X,Var2)) +
+  geom_tile(aes(fill=CorrValue)) +
+  geom_text(aes(label=stars), color="black", size=4) + # 把星号添加进去
+  scale_fill_gradient2(low='#1867AC', high='#C0151B',mid = 'white', limit=c(-0.05,0.1),  name=paste0("*    p < 0.05","\n\n","**  p < 0.01","\n\n","*** p < 0.001","\n\n","Correlation")) + # 把P值添加到图例，这一步非常巧妙
+  labs(x=NULL,y=NULL) + # 去掉横纵坐标标题
+  theme(axis.text.x = element_text(size=8,angle = 45,hjust = 1,color = "black"),
+        axis.text.y = element_text(size=8,color = "black"),
+        axis.ticks.y = element_blank(),
+        panel.background=element_blank())
+pdf("barplot_110722.pdf",width = 4.8,height = 7.5)         ##pdf("barplot_110722.pdf",width = 3.75,height = 3)
+print(barplot)
+dev.off()
+
+
+#### LightGBM with logistic model to calculate protein importance
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import StratifiedKFold
+from scipy import stats
+from MLstatkit.stats import Delong_test
+
+# Example data
+X = pd.read_csv('/public/home/wangliang/Protein/ProteinData_new.csv')
+Z = pd.read_csv('/public/home/wangliang/Protein/MS_prevalent_final_0407.csv')
+y = pd.read_csv('/public/home/wangliang/Protein/MS_QCed_prevalent_data1.csv')
+df = pd.DataFrame(y)
+y = df[['eid', 'status']]
+merged = pd.merge(X, y, on='eid')
+y = merged[['status']]
+df = pd.DataFrame(merged)
+X = df[['ITGAV', 'ITGAM', 'NEFL', 'ITGB2', 'MXRA8', 'ITGA11', 'CST1', 'CA14', 'COMP', 'PEPD', 'HPGDS', 'ENPP5', 'CLEC4A', 'TF', 'ACHE', 'CA6', 'CHRDL2', 'CST5', 'RGMA', 'BAG3', 'SFRP4', 'GFAP', 'MYOC', 'ITGA2', 'RET', 'CRTAC1', 'OMG', 'MERTK', 'ACP5', 'ART3', 'FAP', 'MEPE', 'MSTN', 'CLEC4M', 'CDA', 'TNXB', 'FNDC1', 'GPC1', 'DUSP13', 'IGDCC4', 'PPY', 'CHAD', 'ITGB5', 'FGFBP2', 'GZMA', 'COL15A1', 'RGMB', 'CPA2']]
+X = df[['NEFL', 'GZMA', 'SPOCK1', 'ERBB2', 'DCTPP1', 'MAN1A2', 'FGL1', 'ITGAV', 'POMC', 'SETMAR', 'COMP', 'CD34', 'IL1RAP', 'FASLG', 'LYPD3', 'BGN', 'KLRD1', 'B4GAT1', 'ADA', 'ADGRE5']]
+X = df[['Sex', 'Age', 'alcohol', 'smoking', 'ethnic', 'BMI', 'TDI']]
+X_train, X_test, y_train, y_test=train_test_split(X, y, random_state=42, test_size=0.3)
+model = lgb.LGBMClassifier(objective='binary', metric='auc', is_unbalance=True, verbosity= 1, seed=2023)
+model.set_params(**{'n_estimators': 500, 'max_depth': 15, 'num_leaves': 10,
+                             'subsample': 0.7, 'learning_rate': 0.01, 'colsample_bytree': 0.7})
+model.fit(X_train, y_train)                             ##y_train = y_train.values.ravel()          y_test = y_test.values.ravel()
+# Get feature (protein) importance
+importance = model.feature_importances_
+importance_df = pd.DataFrame({
+    'Protein': X.columns,
+    'Importance': importance
+}).sort_values('Importance', ascending=False)
+print(importance_df)
+# 初始化分层K折交叉验证
+cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+all_auc = []
+# 进行交叉验证
+print(X_train)
+X = X_train      ##70%derivation set
+df = pd.DataFrame(X)
+X = df[['NEFL', 'BGN', 'FGL1', 'SPOCK1', 'POMC', 'SETMAR', 'CD34', 'IL1RAP', 'COMP', 'LYPD3', 'MAN1A2', 'FASLG', 'ADGRE5', 'ITGAV', 'DCTPP1', 'KLRD1', 'ERBB2', 'ADA', 'B4GAT1', 'GZMA']]
+print(X)
+y = y_train       ##70%derivation set
+print(y)
+for train_index, test_index in cv.split(X, y):
+     X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+     y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+     model.fit(X_train, y_train)      
+     y_score = model.predict_proba(X_test)[:, 1] 
+     auc = roc_auc_score(y_test, y_score)
+     all_auc.append(auc)                     
+# 计算平均AUC和置信区间
+mean_auc = np.mean(all_auc)
+std_auc = np.std(all_auc)
+# 计算95%置信区间
+ci_lower, ci_upper = stats.norm.interval(0.95, loc=mean_auc, scale=std_auc/np.sqrt(10))
+print(mean_auc, ci_lower, ci_upper, all_auc)
+# Perform DeLong's test
+all_y_true = []
+all_y_pred1 = []
+all_y_pred2 = []
+y = y.values.ravel()             ##针对 Pandas DataFrame转化为一维数组
+for train_index, test_index in cv.split(X, y):
+     X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+     y_train, y_test = y[train_index], y[test_index]
+     model.fit(X_train, y_train)
+     all_y_true.extend(y_test)             
+     y_pred1 = model.predict_proba(X_test)[:, 1]
+     all_y_pred1.extend(y_pred1)
+all_y_true = np.array(all_y_true)
+all_y_pred1 = np.array(all_y_pred1)
+all_y_pred2 = np.array(all_y_pred2)
+z_score, p_value = Delong_test(all_y_true, all_y_pred2, all_y_pred1)             ##比较cv中所有的y_test
+print(z_score, p_value)
+
+# 获得shap的beeswarm图
+import matplotlib.pyplot as plt
+import shap
+# get shap values
+plt.figure(figsize=(10, 8))
+explainer = shap.Explainer(model)
+shap_values = explainer(X_train)
+shap.plots.beeswarm(shap_values, max_display=19)
+plt.savefig('/public/home/wangliang/Protein/output.pdf')
+
+# 在测试集上预测
+y_pred_prob = model.predict_proba(X_test2)[:, 1]
+test_auc = roc_auc_score(y_test, y_pred_prob)
+print(test_auc)
+
+# 绘制AUC曲线
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
+model.fit(X_train1, y_train)
+y_pred_prob1 = model.predict_proba(X_test1)[:, 1]
+y_pred_prob1 = model.predict_proba(X_test1, predict_disable_shape_check=True)[:, 1]         ##若验证集与预测集变量不一致
+model.fit(X_train2, y_train)
+y_pred_prob2 = model.predict_proba(X_test2)[:, 1]
+model.fit(X_train3, y_train)
+y_pred_prob3 = model.predict_proba(X_test3)[:, 1]
+fpr1, tpr1, _ = roc_curve(y_test, y_pred_prob1)
+roc_auc1 = auc(fpr1, tpr1)
+fpr2, tpr2, _ = roc_curve(y_test, y_pred_prob2)
+roc_auc2 = auc(fpr2, tpr2)
+fpr3, tpr3, _ = roc_curve(y_test, y_pred_prob3)
+roc_auc3 = auc(fpr3, tpr3)
+plt.figure(figsize=(8, 8))                ##plt.figure(figsize=(4.5, 4.5))
+plt.plot(fpr1, tpr1, color='blue', lw=2, label=f'Model 1 (AUC = {roc_auc1:.2f})')
+plt.plot(fpr2, tpr2, color='green', lw=2, label=f'Model 2 (AUC = {roc_auc2:.2f})')
+plt.plot(fpr3, tpr3, color='red', lw=2, label=f'Model 3 (AUC = {roc_auc3:.2f})')
+plt.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--')
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate', fontsize=12)
+plt.ylabel('True Positive Rate', fontsize=12)
+plt.title('Receiver Operating Characteristic (ROC) Curve', fontsize=14)
+plt.legend(loc="lower right", fontsize=12)
+plt.grid(True, alpha=0.3)
+plt.savefig('/public/home/wangliang/Protein/roc16.pdf')
+
+# 使用Bootstrap方法计算AUC的95%置信区间
+n_bootstraps = 1000  # Bootstrap重采样次数
+auc_scores2 = []
+df = pd.DataFrame(X_test)
+X_test = df[['NEFL', 'TF', 'MERTK', 'CST1', 'GFAP', 'PPY', 'MEPE', 'ITGAV', 'CPA2', 'MSTN', 'ITGAM', 'SFRP4', 'ACHE', 'CHRDL2', 'HPGDS', 'CLEC4A', 'CDA']]
+for i in range(n_bootstraps):
+    indices = np.random.choice(len(y_test), len(y_test), replace=True)
+    y_test_boot = y_test.iloc[indices]
+    y_pred_prob_boot = y_pred_prob[indices]
+    auc = roc_auc_score(y_test_boot, y_pred_prob_boot)
+    auc_scores2.append(auc)
+ci_lower = np.percentile(auc_scores2, 2.5)
+ci_upper = np.percentile(auc_scores2, 97.5)
+mean_auc = np.mean(auc_scores2)
+print(mean_auc, ci_lower, ci_upper)
+
+#内部验证与外部验证
+X_train = merged[['NEFL', 'CST1', 'TF', 'PPY', 'GFAP', 'MSTN', 'COL15A1', 'ITGAV', 'MERTK', 'CDA', 'Sex', 'Age', 'alcohol', 'smoking', 'ethnic', 'BMI', 'TDI']]
+X_train = merged[['NEFL', 'BGN', 'FGL1', 'SPOCK1', 'POMC', 'SETMAR', 'CD34', 'IL1RAP', 'Sex', 'Age', 'alcohol', 'smoking', 'ethnic', 'BMI', 'TDI']]
+for train_index, test_index in cv.split(X, y):
+     X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+     y_train, y_test = y[train_index], y[test_index]
+     model.fit(X_train, y_train)     
+     y_pred = model.predict_proba(X_test)[:, 1]
+     all_y_pred.extend(y_pred)
+
+#AUC直方图
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.cm import Blues
+import matplotlib.patches as mpatches
+X = pd.read_csv('/public/home/wangliang/Protein/protein_importance1.csv')
+df = pd.DataFrame(X)
+proteins = df[['proteins']]
+proteins = proteins.values.ravel()
+importance = df[['importance']]
+importance = importance.values.ravel()
+auc_values = df[['auc_values']]
+auc_values = auc_values.values.ravel()
+CI_lower = df[['CI_lower']]
+CI_lower = CI_lower.values.ravel()
+CI_upper = df[['CI_upper']]
+CI_upper = CI_upper.values.ravel()
+# 创建图形
+fig, ax1 = plt.subplots(figsize=(16, 8))
+# 创建颜色映射（不使用归一化）
+cmap = plt.get_cmap('Blues')
+colors = [cmap(imp/max(importance)) for imp in importance]
+# 绘制直方图（颜色随importance变化）
+bars = ax1.bar(proteins, importance, color=colors, edgecolor='black', width=0.8)
+# 设置主Y轴
+ax1.set_ylabel('Protein Importance', fontsize=12)
+ax1.set_ylim(0, 0.072)
+# 创建右侧Y轴显示AUC范围
+ax2 = ax1.twinx()
+ax2.set_ylim(0.55, 0.86)
+ax2.set_ylabel('AUC Value Range', fontsize=12)
+# 绘制AUC点线图
+plt.fill_between(proteins, CI_upper, CI_lower, color='red', alpha=0.12)       # alpha控制透明度
+auc_line = ax2.plot(proteins[:19], auc_values[:19], 'o-', 
+                   color='red', linewidth=2, 
+                   markersize=10)
+auc_line = ax2.plot(proteins[19:], auc_values[19:], 'o-', 
+                   color='black', linewidth=2, 
+                   markersize=8)
+# 添加图例
+importance_legend = mpatches.Patch(color=Blues(0.7), label='Protein Importance')
+auc_legend = plt.Line2D([], [], color='#FF6B6B', marker='o', label='AUC Value')
+ax1.legend(handles=[importance_legend, auc_legend], loc='upper left')
+# 坐标轴美化
+ax1.set_ylabel('Protein Importance Score', fontsize=12)
+ax1.tick_params(axis='x', rotation=45)
+plt.title('Protein Importance vs AUC Performance', fontsize=14, pad=20)
+# 添加网格线
+width = 0.8
+plt.xlim(left=-width/2, right=len(proteins)-width/2)        ##plt.xlim(left=-0.8, right=47.8)    ##plt.xlim(left=-0.8, right=19.8)
+ax1.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig('/public/home/wangliang/Protein/output.pdf')
+
+##Bootstrap计算AUC及其它指标
+import numpy as np
+import pandas as pd
+from sklearn.metrics import (roc_auc_score, accuracy_score, recall_score,precision_score, f1_score, confusion_matrix)
+from sklearn.utils import resample
+from tqdm import tqdm
+from sklearn.model_selection import train_test_split
+import lightgbm as lgb
+import warnings
+warnings.filterwarnings('ignore')
+X = pd.read_csv('/public/home/wangliang/Protein/ProteinData_new.csv')
+y = pd.read_csv('/public/home/wangliang/Protein/MS_QCed_prevalent_data1.csv')
+df = pd.DataFrame(y)
+y = df[['eid', 'status']]
+merged = pd.merge(X, y, on='eid')
+y = merged[['status']]
+df = pd.DataFrame(merged)
+X = df[['ITGAV', 'ITGAM', 'NEFL', 'ITGB2', 'MXRA8', 'ITGA11', 'CST1', 'CA14', 'COMP', 'PEPD', 'HPGDS', 'ENPP5', 'CLEC4A', 'TF', 'ACHE', 'CA6', 'CHRDL2', 'CST5', 'RGMA', 'BAG3', 'SFRP4', 'GFAP', 'MYOC', 'ITGA2', 'RET', 'CRTAC1', 'OMG', 'MERTK', 'ACP5', 'ART3', 'FAP', 'MEPE', 'MSTN', 'CLEC4M', 'CDA', 'TNXB', 'FNDC1', 'GPC1', 'DUSP13', 'IGDCC4', 'PPY', 'CHAD', 'ITGB5', 'FGFBP2', 'GZMA', 'COL15A1', 'RGMB', 'CPA2']]
+X_train, X_test, y_train, y_test=train_test_split(X, y, random_state=42, test_size=0.3)
+model = lgb.LGBMClassifier(objective='binary', metric='auc', is_unbalance=True, verbosity= 1, seed=2023)
+model.set_params(**{'n_estimators': 500, 'max_depth': 15, 'num_leaves': 10,
+                             'subsample': 0.7, 'learning_rate': 0.01, 'colsample_bytree': 0.7})
+model.fit(X_train, y_train)
+y_pred_prob = model.predict_proba(X_test)[:, 1]
+y_test = y_test.values.ravel()
+threshold = 0.5
+y_pred = (y_pred_prob >= threshold).astype(int)
+metrics = {}
+data = pd.DataFrame({
+           'true': y_test,
+           'pred_proba': y_pred_prob,
+           'pred': y_pred
+       })
+def calculate_specificity(y_test, y_pred):
+     """计算特异性"""
+     tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+     return tn / (tn + fp) if (tn + fp) > 0 else 0 
+def calculate_youden(y_test, y_pred):
+     """计算Youden指数"""
+     tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+     sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+     return sensitivity + specificity - 1
+n_bootstraps=1000
+random_state=42
+np.random.seed(random_state)
+auc_scores = []
+accuracy_scores = []
+recall_scores = []
+specificity_scores = []
+precision_scores = []
+youden_scores = []
+f1_scores = []
+# Bootstrap抽样
+for i in tqdm(range(n_bootstraps), desc="Bootstrap采样"):
+        # 有放回抽样
+        sample = resample(data, replace=True, random_state=random_state+i)
+        
+        # 计算各项指标
+        try:
+            # AUC
+            auc = roc_auc_score(sample['true'], sample['pred_proba'])
+            auc_scores.append(auc)
+            
+            # 其他基于阈值的指标
+            acc = accuracy_score(sample['true'], sample['pred'])
+            rec = recall_score(sample['true'], sample['pred'], zero_division=0)
+            spec = calculate_specificity(sample['true'], sample['pred'])
+            prec = precision_score(sample['true'], sample['pred'], zero_division=0)
+            yden = calculate_youden(sample['true'], sample['pred'])
+            f1 = f1_score(sample['true'], sample['pred'], zero_division=0)
+            
+            accuracy_scores.append(acc)
+            recall_scores.append(rec)
+            specificity_scores.append(spec)
+            precision_scores.append(prec)
+            youden_scores.append(yden)
+            f1_scores.append(f1)
+            
+        except:
+            continue
+def calculate_ci(scores, alpha=0.05):
+        """计算置信区间"""
+        lower = np.percentile(scores, alpha/2 * 100)
+        upper = np.percentile(scores, (1 - alpha/2) * 100)
+        mean = np.mean(scores)
+        return mean, (lower, upper)
+results = {}
+metrics_data = {
+        'AUC': auc_scores,
+        'Accuracy': accuracy_scores,
+        'Recall': recall_scores,
+        'Specificity': specificity_scores,
+        'Precision': precision_scores,
+        'Youden': youden_scores,
+        'F1': f1_scores
+    }
+for metric_name, scores in metrics_data.items():
+        mean, ci = calculate_ci(scores)
+        results[metric_name] = {
+            'mean': mean,
+            '95%_CI': ci,
+            'CI_lower': ci[0],
+            'CI_upper': ci[1]
+        }
+def print_results(results):
+    """格式化打印结果"""
+    print("Bootstrap结果 (95% 置信区间):")
+    print("=" * 60)
+    for metric, values in results.items():
+        print(f"{metric:12s}: {values['mean']:.4f} ({values['CI_lower']:.4f} - {values['CI_upper']:.4f})")
+print_results(results)
